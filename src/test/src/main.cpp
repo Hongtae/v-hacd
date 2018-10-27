@@ -118,6 +118,8 @@ bool SaveOFF(const string& fileName, const float* const& points, const int* cons
     const unsigned int& nTriangles, IVHACD::IUserLogger& logger);
 bool SaveVRML2(ofstream& fout, const double* const& points, const int* const& triangles, const unsigned int& nPoints,
     const unsigned int& nTriangles, const Material& material, IVHACD::IUserLogger& logger);
+bool SaveOBJ(ofstream& fout, const double* const& points, const int* const& triangles, const unsigned int& nPoints,
+    const unsigned int& nTriangles, const Material& material, IVHACD::IUserLogger& logger, int convexPart, int vertexOffset);
 void GetFileExtension(const string& fileName, string& fileExtension);
 void ComputeRandomColor(Material& mat);
 void Usage(const Parameters& params);
@@ -169,13 +171,12 @@ int main(int argc, char* argv[])
         msg << "+ Parameters" << std::endl;
         msg << "\t input                                       " << params.m_fileNameIn << endl;
         msg << "\t resolution                                  " << params.m_paramsVHACD.m_resolution << endl;
-        msg << "\t max. depth                                  " << params.m_paramsVHACD.m_depth << endl;
         msg << "\t max. concavity                              " << params.m_paramsVHACD.m_concavity << endl;
         msg << "\t plane down-sampling                         " << params.m_paramsVHACD.m_planeDownsampling << endl;
         msg << "\t convex-hull down-sampling                   " << params.m_paramsVHACD.m_convexhullDownsampling << endl;
         msg << "\t alpha                                       " << params.m_paramsVHACD.m_alpha << endl;
         msg << "\t beta                                        " << params.m_paramsVHACD.m_beta << endl;
-        msg << "\t gamma                                       " << params.m_paramsVHACD.m_gamma << endl;
+        msg << "\t maxhulls                                    " << params.m_paramsVHACD.m_maxConvexHulls << endl;
         msg << "\t pca                                         " << params.m_paramsVHACD.m_pca << endl;
         msg << "\t mode                                        " << params.m_paramsVHACD.m_mode << endl;
         msg << "\t max. vertices per convex-hull               " << params.m_paramsVHACD.m_maxNumVerticesPerCH << endl;
@@ -222,27 +223,59 @@ int main(int argc, char* argv[])
             }
         }
 #endif //CL_VERSION_1_1
-        bool res = interfaceVHACD->Compute(&points[0], 3, (unsigned int)points.size() / 3,
-            &triangles[0], 3, (unsigned int)triangles.size() / 3, params.m_paramsVHACD);
+        bool res = interfaceVHACD->Compute(&points[0], (unsigned int)points.size() / 3,
+            (const uint32_t *)&triangles[0], (unsigned int)triangles.size() / 3, params.m_paramsVHACD);
+
+
+
+
         if (res) {
-            // save output
-            unsigned int nConvexHulls = interfaceVHACD->GetNConvexHulls();
-            msg.str("");
-            msg << "+ Generate output: " << nConvexHulls << " convex-hulls " << endl;
-            myLogger.Log(msg.str().c_str());
-            ofstream foutCH(params.m_fileNameOut.c_str());
-            IVHACD::ConvexHull ch;
-            if (foutCH.is_open()) {
-                Material mat;
-                for (unsigned int p = 0; p < nConvexHulls; ++p) {
-                    interfaceVHACD->GetConvexHull(p, ch);
-                    ComputeRandomColor(mat);
-                    SaveVRML2(foutCH, ch.m_points, ch.m_triangles, ch.m_nPoints, ch.m_nTriangles, mat, myLogger);
-                    msg.str("");
-                    msg << "\t CH[" << setfill('0') << setw(5) << p << "] " << ch.m_nPoints << " V, " << ch.m_nTriangles << " T" << endl;
-                    myLogger.Log(msg.str().c_str());
+            std::string ext;
+            if (params.m_fileNameOut.length() > 4) {
+                ext = params.m_fileNameOut.substr(params.m_fileNameOut.length()-4);
+            }
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext != ".obj") {
+                // save output
+                unsigned int nConvexHulls = interfaceVHACD->GetNConvexHulls();
+                msg.str("");
+                msg << "+ Generate output: " << nConvexHulls << " convex-hulls " << endl;
+                myLogger.Log(msg.str().c_str());
+                ofstream foutCH(params.m_fileNameOut.c_str());
+                IVHACD::ConvexHull ch;
+                if (foutCH.is_open()) {
+                    Material mat;
+                    for (unsigned int p = 0; p < nConvexHulls; ++p) {
+                        interfaceVHACD->GetConvexHull(p, ch);
+                        ComputeRandomColor(mat);
+                        SaveVRML2(foutCH, ch.m_points, (const int *)ch.m_triangles, ch.m_nPoints, ch.m_nTriangles, mat, myLogger);
+                        msg.str("");
+                        msg << "\t CH[" << setfill('0') << setw(5) << p << "] " << ch.m_nPoints << " V, " << ch.m_nTriangles << " T" << endl;
+                        myLogger.Log(msg.str().c_str());
+                    }
+                    foutCH.close();
                 }
-                foutCH.close();
+            }
+            else {
+                unsigned int nConvexHulls = interfaceVHACD->GetNConvexHulls();
+                msg.str("");
+                msg << "+ Generate output: " << nConvexHulls << " convex-hulls " << endl;
+                myLogger.Log(msg.str().c_str());
+                ofstream foutCH(params.m_fileNameOut.c_str());
+                IVHACD::ConvexHull ch;
+                if (foutCH.is_open()) {
+                    Material mat;
+                    int vertexOffset = 1;//obj wavefront starts counting at 1...
+                    for (unsigned int p = 0; p < nConvexHulls; ++p) {
+                        interfaceVHACD->GetConvexHull(p, ch);
+                        SaveOBJ(foutCH, ch.m_points, (const int *)ch.m_triangles, ch.m_nPoints, ch.m_nTriangles, mat, myLogger, p, vertexOffset);
+                        vertexOffset+=ch.m_nPoints;
+                        msg.str("");
+                        msg << "\t CH[" << setfill('0') << setw(5) << p << "] " << ch.m_nPoints << " V, " << ch.m_nTriangles << " T" << endl;
+                        myLogger.Log(msg.str().c_str());
+                    }
+                    foutCH.close();
+                }
             }
         }
         else {
@@ -278,7 +311,7 @@ void Usage(const Parameters& params)
     msg << "       --output                    VRML 2.0 output file name" << endl;
     msg << "       --log                       Log file name" << endl;
     msg << "       --resolution                Maximum number of voxels generated during the voxelization stage (default=100,000, range=10,000-16,000,000)" << endl;
-    msg << "       --depth                     Maximum number of clipping stages. During each split stage, parts with a concavity higher than the user defined threshold are clipped according the \"best\" clipping plane (default=20, range=1-32)" << endl;
+    msg << "       --maxhulls                  Maximum number of convex hulls to produce." << endl;
     msg << "       --concavity                 Maximum allowed concavity (default=0.0025, range=0.0-1.0)" << endl;
     msg << "       --planeDownsampling         Controls the granularity of the search for the \"best\" clipping plane (default=4, range=1-16)" << endl;
     msg << "       --convexhullDownsampling    Controls the precision of the convex-hull generation process during the clipping plane selection stage (default=4, range=1-16)" << endl;
@@ -323,10 +356,6 @@ void ParseParameters(int argc, char* argv[], Parameters& params)
             if (++i < argc)
                 params.m_paramsVHACD.m_resolution = atoi(argv[i]);
         }
-        else if (!strcmp(argv[i], "--depth")) {
-            if (++i < argc)
-                params.m_paramsVHACD.m_depth = atoi(argv[i]);
-        }
         else if (!strcmp(argv[i], "--concavity")) {
             if (++i < argc)
                 params.m_paramsVHACD.m_concavity = atof(argv[i]);
@@ -347,9 +376,9 @@ void ParseParameters(int argc, char* argv[], Parameters& params)
             if (++i < argc)
                 params.m_paramsVHACD.m_beta = atof(argv[i]);
         }
-        else if (!strcmp(argv[i], "--gamma")) {
+        else if (!strcmp(argv[i], "--maxhulls")) {
             if (++i < argc)
-                params.m_paramsVHACD.m_gamma = atof(argv[i]);
+                params.m_paramsVHACD.m_maxConvexHulls = atoi(argv[i]);
         }
         else if (!strcmp(argv[i], "--pca")) {
             if (++i < argc)
@@ -535,7 +564,7 @@ bool LoadOBJ(const string& fileName, vector<float>& points, vector<int>& triangl
                 int k = 0;
                 while (pch) {
                     pch = strtok(str, " ");
-                    if (pch) {
+                    if (pch && *pch != '\n') {
                         ip[k++] = atoi(pch) - 1;
                     }
                     else {
@@ -662,3 +691,39 @@ bool SaveVRML2(ofstream& fout, const double* const& points, const int* const& tr
         return false;
     }
 }
+
+
+bool SaveOBJ(ofstream& fout, const double* const& points, const int* const& triangles, const unsigned int& nPoints,
+    const unsigned int& nTriangles, const Material& material, IVHACD::IUserLogger& logger, int convexPart, int vertexOffset)
+{
+    if (fout.is_open()) {
+
+        fout.setf(std::ios::fixed, std::ios::floatfield);
+        fout.setf(std::ios::showpoint);
+        fout.precision(6);
+        size_t nV = nPoints * 3;
+        size_t nT = nTriangles * 3;
+
+		fout << "o convex_" << convexPart << std::endl;
+
+        if (nV > 0) {
+            for (size_t v = 0; v < nV; v += 3) {
+                fout << "v " << points[v + 0] << " " << points[v + 1] << " " << points[v + 2] << std::endl;
+            }
+        }
+        if (nT > 0) {
+            for (size_t f = 0; f < nT; f += 3) {
+                     fout << "f " 
+                     << triangles[f + 0]+vertexOffset << " "
+                     << triangles[f + 1]+vertexOffset << " "
+                     << triangles[f + 2]+vertexOffset << " " << std::endl;
+            }
+        }
+        return true;
+    }
+    else {
+        logger.Log("Can't open file\n");
+        return false;
+    }
+}
+
