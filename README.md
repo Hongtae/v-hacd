@@ -14,6 +14,13 @@ A second approach consists in computing an exact convex decomposition of a surfa
 
 # Installing the Package
 
+## Blender 2.8x
+
+A 2.8x port of the blender addon tool can be found here: https://github.com/andyp123/blender_vhacd, please go there and follow the instructions provided in that repository. 
+The in-repo included 2.7x version of the tool will not function for Blender 2.8+.
+
+## Blender 2.7x
+
 1. Clone this Github repository
 1. You may either rebuild the binaries for your machine or use the provided binaries.  Here we will assume that you will use the provided binaries in the v-hacd/bin directory.
 1. Copy the Python script in v-hacd/add-ons/blender/object_vhacd.py to your Blender addons directory.  For Blender 2.78 this directory will be "Blender Foundation/Blender/2.78/scripts/addons/".  You're at the right place if you see other scripts prefixed with object\_.
@@ -30,6 +37,23 @@ A second approach consists in computing an exact convex decomposition of a surfa
 1. Select the V-HACD button at the button of the panel.  You will be presented with some options.
 1. Modify the options as desired and select "OK."
 1. Note that the processing may take some time.  Increasing voxel resolution will particularly increase runtime.
+
+# Parameters 
+| Parameter name | Description | Default value | Range |
+| ------------- | ------------- | ------------- | ---- |
+| resolution | maximum number of voxels generated during the voxelization stage	| 100,000 | 10,000-64,000,000 |
+| depth |	maximum number of clipping stages. During each split stage, all the model parts (with a concavity higher than the user defined threshold) are clipped according the "best" clipping plane | 20 | 1-32 |
+| concavity |	maximum concavity |	0.0025 | 0.0-1.0 |
+| planeDownsampling |	controls the granularity of the search for the "best" clipping plane | 4 | 1-16 |
+| convexhullDownsampling | controls the precision of the convex-hull generation process during the clipping plane selection stage | 4 | 1-16 |
+| alpha | controls the bias toward clipping along symmetry planes | 0.05 | 0.0-1.0 |
+| beta | controls the bias toward clipping along revolution axes | 0.05 | 0.0-1.0 |
+| gamma |	maximum allowed concavity during the merge stage | 0.00125 | 0.0-1.0 |
+| pca |	enable/disable normalizing the mesh before applying the convex decomposition | 0 | 0-1 |
+| mode | 0: voxel-based approximate convex decomposition, 1: tetrahedron-based approximate convex decomposition | 0 | 0-1 |
+| maxNumVerticesPerCH |	controls the maximum number of triangles per convex-hull | 64 | 4-1024 |
+| minVolumePerCH | controls the adaptive sampling of the generated convex-hulls | 0.0001 | 0.0-0.01 |
+
 
 # More approximate convex decomposition results
 ![V-HACD Results (1/4)](https://raw.githubusercontent.com/kmammou/v-hacd/master/doc/snapshots_1.png)
