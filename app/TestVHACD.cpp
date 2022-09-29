@@ -56,7 +56,8 @@ bool getTrueFalse(const char *option,bool &value)
 	return ret;
 }
 
-class Logging : public VHACD::IVHACD::IUserCallback, public VHACD::IVHACD::IUserLogger
+class Logging : public VHACD::IVHACD::IUserCallback,
+                public VHACD::IVHACD::IUserLogger
 {
 public:
 	Logging(void)
@@ -161,7 +162,7 @@ int main(int argc,const char **argv)
 		printf("-h <n>                  : Maximum number of output convex hulls. Default is 32\n");
 		printf("-r <voxelresolution>    : Total number of voxels to use. Default is 100,000\n");
 		printf("-e <volumeErrorPercent> : Volume error allowed as a percentage. Default is 1%%\n");
-		printf("-d <maxRecursionDepth>  : Maximum recursion depth. Default value is 12.\n");
+		printf("-d <maxRecursionDepth>  : Maximum recursion depth. Default value is 10.\n");
 		printf("-s <true/false>         : Whether or not to shrinkwrap output to source mesh. Default is true.\n");
 		printf("-f <fillMode>           : Fill mode. Default is 'flood', also 'surface' and 'raycast' are valid.\n");
 		printf("-v <maxHullVertCount>   : Maximum number of vertices in the output convex hull. Default value is 64\n");
@@ -169,9 +170,11 @@ int main(int argc,const char **argv)
 		printf("-l <minEdgeLength>      : Minimum size of a voxel edge. Default value is 2 voxels.\n");
 		printf("-p <true/false>         : If false, splits hulls in the middle. If true, tries to find optimal split plane location. False by default.\n");
 		printf("-o <obj/stl>            : Export the convex hulls as a series of wavefront OBJ files or STL files.\n");
+		printf("-l <true/false>         : If set to false, no logging will be displayed.\n");
 	}
 	else
 	{
+		bool showLogging=true;
 		Logging logging;
 		VHACD::IVHACD::Parameters p;
 		p.m_callback = &logging;
@@ -272,6 +275,21 @@ int main(int argc,const char **argv)
 						else
 						{
 							printf("Shrinkwrap disabled.\n");
+						}
+					}
+				}
+				else if ( strcmp(option,"-l") == 0 )
+				{
+					if ( getTrueFalse(value,showLogging) )
+					{
+						if ( showLogging )
+						{
+							printf("Logging messages enabled.\n");
+						}
+						else
+						{
+							p.m_logger = nullptr;
+							p.m_callback = nullptr;
 						}
 					}
 				}
@@ -512,7 +530,7 @@ int main(int argc,const char **argv)
 						fclose(fph);
 					}
 				}
-				// Save the decompostion as a single STL file
+				// Save the decomposition as a single STL file
 				{
 					FILE *fph = fopen("decomp.stl","wb");
 					if ( fph )
@@ -554,6 +572,7 @@ int main(int argc,const char **argv)
 								fprintf(fph,"endsolid %s\n", hullName);
 							}
 						}
+						fclose(fph);
 					}
 				}
 			}
