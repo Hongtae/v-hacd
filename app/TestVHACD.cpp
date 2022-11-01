@@ -17,11 +17,13 @@
 #include "VHACD.h"
 #include "wavefront.h"
 #include "FloatMath.h"
+#include "SaveUSDA.h"
 #include "ScopedTime.h"
 
 #include <thread>
 #include <string>
 #include <vector>
+#include <array>
 
 #ifdef _MSC_VER
 #pragma warning(disable:4100 4996)
@@ -131,7 +133,8 @@ enum class ExportFormat
 {
 	NONE,
 	WAVEFRONT,
-	STL
+	STL,
+    USDA
 };
 
 const char *lastDot(const char *str)
@@ -161,7 +164,7 @@ int main(int argc,const char **argv)
 		printf("\n");
 		printf("-h <n>                  : Maximum number of output convex hulls. Default is 32\n");
 		printf("-r <voxelresolution>    : Total number of voxels to use. Default is 100,000\n");
-		printf("-e <volumeErrorPercent> : Volume error allowed as a percentage. Default is 1%%\n");
+		printf("-e <volumeErrorPercent> : Volume error allowed as a percentage. Default is 1%%. Valid range is 0.001 to 10\n");
 		printf("-d <maxRecursionDepth>  : Maximum recursion depth. Default value is 10.\n");
 		printf("-s <true/false>         : Whether or not to shrinkwrap output to source mesh. Default is true.\n");
 		printf("-f <fillMode>           : Fill mode. Default is 'flood', also 'surface' and 'raycast' are valid.\n");
@@ -169,8 +172,8 @@ int main(int argc,const char **argv)
 		printf("-a <true/false>         : Whether or not to run asynchronously. Default is 'true'\n");
 		printf("-l <minEdgeLength>      : Minimum size of a voxel edge. Default value is 2 voxels.\n");
 		printf("-p <true/false>         : If false, splits hulls in the middle. If true, tries to find optimal split plane location. False by default.\n");
-		printf("-o <obj/stl>            : Export the convex hulls as a series of wavefront OBJ files or STL files.\n");
-		printf("-l <true/false>         : If set to false, no logging will be displayed.\n");
+		printf("-o <obj/stl/usda>       : Export the convex hulls as a series of wavefront OBJ files, STL files, or a single USDA.\n");
+		printf("-g <true/false>         : If set to false, no logging will be displayed.\n");
 	}
 	else
 	{
@@ -224,9 +227,9 @@ int main(int argc,const char **argv)
 				else if ( strcmp(option,"-e") == 0 )
 				{
 					double e = atof(value);
-					if ( e < 0 || e > 50 )
+					if ( e < 0.001 || e > 10 )
 					{
-						printf("Invalid error percentage. Valid values are 0 to 50\n");
+						printf("Invalid error percentage. Valid values are 0.001 to 10\n");
 					}
 					else
 					{
@@ -246,6 +249,11 @@ int main(int argc,const char **argv)
 						format = ExportFormat::STL;
 						printf("Saving the output convex hulls as a single ASCII STL file.\n");
 					}
+                    else if (strcmp(value, "usda") == 0)
+                    {
+                        format = ExportFormat::USDA;
+                        printf("Saving the output convex hulls as a single USDA.\n");
+                    }
 					else
 					{
 						printf("Unknown export file format (%s). Currently only support 'obj' and 'stl'\n", value);
@@ -278,7 +286,7 @@ int main(int argc,const char **argv)
 						}
 					}
 				}
-				else if ( strcmp(option,"-l") == 0 )
+				else if ( strcmp(option,"-g") == 0 )
 				{
 					if ( getTrueFalse(value,showLogging) )
 					{
@@ -422,9 +430,50 @@ int main(int argc,const char **argv)
 				char outputName[2048];
 				snprintf(outputName,sizeof(outputName),"%s_decompose.stl", baseName.c_str());
 
+                // Colorize the decomposition result
+                std::array<std::array<uint8_t, 3>, 10> colorCycle{
+                    31,  119, 180,
+                    255, 127, 14,
+                    44,  160, 44,
+                    214, 39,  40,
+                    148, 103, 189,
+                    140, 86,  75,
+                    227, 119, 194,
+                    127, 127, 127,
+                    188, 189, 34,
+                    23,  190, 207,
+                };
+
+
 				if ( dot && format != ExportFormat::NONE)
 				{
-					if ( format == ExportFormat::STL )
+                    if ( format == ExportFormat::USDA )
+                    {
+                        printf("Saving 'decomp.usda'\n");
+                        SaveUSDA *s = SaveUSDA::create("decomp.usda");
+
+
+                        for (uint32_t i = 0; i < iface->GetNConvexHulls(); i++)
+                        {
+                            VHACD::IVHACD::ConvexHull ch;
+                            iface->GetConvexHull(i, ch);
+                            char outputName[2048];
+                            snprintf(outputName, sizeof(outputName), "Hull%03d", i);
+                            SimpleMesh sm;
+                            sm.mIndices = (const uint32_t *)&ch.m_triangles[0];
+                            sm.mVertices = (const double *)&ch.m_points[0];
+                            sm.mTriangleCount = uint32_t(ch.m_triangles.size());
+                            sm.mVertexCount = uint32_t(ch.m_points.size());
+                            float meshColor[3] = { 1,1,1};
+                            uint32_t colorIdx = i%10;
+                            meshColor[0] = (float)colorCycle[colorIdx][0] / 255;
+                            meshColor[1] = (float)colorCycle[colorIdx][1] / 255;
+                            meshColor[2] = (float)colorCycle[colorIdx][2] / 255;
+                            s->saveMesh(outputName,sm,meshColor);
+                        }
+                        s->release();
+                    }
+					else if ( format == ExportFormat::STL )
 					{
 						for (uint32_t i=0; i<iface->GetNConvexHulls(); i++)
 						{
@@ -506,11 +555,16 @@ int main(int argc,const char **argv)
 					if ( fph )
 					{
 						printf("Saving Convex Decomposition results of %d convex hulls to 'decomp.obj'\n", iface->GetNConvexHulls());
+						fprintf(fph, "mtllib decomp.mtl\n");
 						uint32_t baseIndex = 1;
 						for (uint32_t i=0; i<iface->GetNConvexHulls(); i++)
 						{	
 							// add an object name for each single convex hull
 							fprintf(fph,"o %s%03d\n", baseName.c_str(), i);
+
+							// add a material for each single convex hull
+							fprintf(fph, "usemtl Material%03d\n", i);
+
 							VHACD::IVHACD::ConvexHull ch;
 							iface->GetConvexHull(i,ch);
 							for (uint32_t j = 0; j < ch.m_points.size(); j++)
@@ -526,6 +580,23 @@ int main(int argc,const char **argv)
 								fprintf(fph,"f %d %d %d\n", i1, i2, i3);
 							}
 							baseIndex += uint32_t(ch.m_points.size());
+						}
+						fclose(fph);
+					}
+
+					fph = fopen("decomp.mtl", "wb");
+					if (fph)
+					{
+						uint32_t colorIdx = 0;
+						for (uint32_t i = 0; i < iface->GetNConvexHulls(); i++)
+						{
+							auto r = (float)colorCycle[colorIdx][0] / 255;
+							auto g = (float)colorCycle[colorIdx][1] / 255;
+							auto b = (float)colorCycle[colorIdx][2] / 255;
+							colorIdx = (colorIdx + 1) % colorCycle.size();
+						
+							fprintf(fph, "newmtl Material%03d\n", i);
+							fprintf(fph, "Kd %0.6f %0.6f %0.6f\n", r, g, b);
 						}
 						fclose(fph);
 					}
